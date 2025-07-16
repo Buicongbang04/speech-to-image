@@ -1,0 +1,17 @@
+numpy<2
+torch==2.2.2
+torchvision==0.17.2
+torchaudio==2.2.2
+transformers<4.41.0
+diffusers
+accelerate
+safetensors
+pillow
+openai-whisper
+fastapi
+uvicorn
+python-multipart
+requests
+aiofiles
+streamlit
+streamlit-audiorecorder
