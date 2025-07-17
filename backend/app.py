@@ -7,6 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import torch
+from transformers import AutoTokenizer, AutoModel, AutoModelForSeq2SeqLM
+from diffusers import StableDiffusionPipeline
+
 # ==== Tạo folder nếu chưa có ====
 AUDIO_DIR = "audio"
 IMAGES_DIR = "images"
@@ -37,19 +41,14 @@ def login(data: LoginRequest):
         return {"status": "ok"}
     raise HTTPException(status_code=401, detail="Sai username/password")
 
-# ====== PhoBERT: Load tokenizer/model ======
+# ====== PhoBERT ======
 print("▶ Đang tải PhoBERT (vinai/phobert-large)...")
-import torch
-from transformers import AutoTokenizer, AutoModel
-
 PHOBERT_TOKENIZER = AutoTokenizer.from_pretrained("vinai/phobert-large")
 PHOBERT_MODEL = AutoModel.from_pretrained("vinai/phobert-large")
 print("✓ Đã tải PhoBERT")
 
-# ====== Stable Diffusion: runwayml/stable-diffusion-v1-5 ======
+# ====== Stable Diffusion ======
 print("▶ Đang tải Stable Diffusion (runwayml/stable-diffusion-v1-5)...")
-from diffusers import StableDiffusionPipeline
-
 SD_MODEL_ID = "runwayml/stable-diffusion-v1-5"
 sd_pipe = StableDiffusionPipeline.from_pretrained(
     SD_MODEL_ID,
@@ -64,6 +63,18 @@ def generate_image_stable_diffusion(prompt: str):
     with torch.autocast(device):
         image = sd_pipe(prompt, num_inference_steps=30, guidance_scale=7.5).images[0]
     return image
+
+# ====== Machine Translation ======
+print("▶ Đang tải Machine Translation (Helsinki-NLP/opus-mt-vi-en)...")
+MT_TOKENIZER = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-vi-en")
+MT_MODEL = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-vi-en")
+print("✓ Đã tải Machine Translation")
+
+def translate_vi2en(text):
+    inputs = MT_TOKENIZER(text, return_tensors="pt", padding=True)
+    translated = MT_MODEL.generate(**inputs, max_length=256)
+    en_text = MT_TOKENIZER.batch_decode(translated, skip_special_tokens=True)[0]
+    return en_text
 
 # ====== ENDPOINT SPEECH2TEXT ======
 @app.post("/speech2text")
@@ -94,7 +105,8 @@ async def speech2text(audio: UploadFile = File(...)):
 # ====== ENDPOINT TEXT2IMAGE ======
 @app.post("/text2image")
 def text2image(text: str = Form(...)):
-    img = generate_image_stable_diffusion(text)
+    en_text = translate_vi2en(text)
+    img = generate_image_stable_diffusion(en_text)
     img_id = uuid.uuid4().hex
     img_path = os.path.join(IMAGES_DIR, f"{img_id}.png")
     img.save(img_path)
